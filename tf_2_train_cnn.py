@@ -318,20 +318,21 @@ def train_model(train_loader, val_loader, total_epochs):
     # PyTorch 版本是「倒數 10 個 Epoch 啟動」的複雜邏輯，Keras 使用更標準的方式。
     # 這裡我們只儲存驗證準確度最高的模型
     keras_callbacks = [
+        # ModelCheckpoint 不支援 start_from_epoch 這個參數.
+        # 試過繼承 base class來實作仍在關聯 self.cp_callback.model 時出錯. 暫時沒有好方法解決這個問題.
         ModelCheckpoint(
             filepath=full_checkpoint_path,
             monitor='val_accuracy',
             mode='max',
             save_best_only=True,
-            start_from_epoch=START_MONITORING_EPOCH, # <--- 從第 N 個 Epoch 才開始儲存/監控
             verbose=1
         ),
-        # 增加 EarlyStopping 來防止過度擬合 (PyTorch 程式中沒有，但實用)
+        # 增加 EarlyStopping 來防止過度擬合 (PyTorch 程式中沒有，但實用), 一樣 150 Epoch 後啟動.
         EarlyStopping(
             monitor='val_loss', 
             patience=20, # 容忍 20 個 epoch 內 loss 不下降
             mode='min',
-            start_from_epoch=START_MONITORING_EPOCH, # <--- 從第 N 個 Epoch 才開始檢查停止條件
+            start_from_epoch=START_MONITORING_EPOCH, # <--- 從第 N 個 Epoch 才開始檢查停止條件 (Keras 3.0/TF 2.16+才支援)
             verbose=1
         )
     ]
