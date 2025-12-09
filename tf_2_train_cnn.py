@@ -1,3 +1,27 @@
+# 訓練時時若看到下面的訊息,"不需要"修正:
+# 1. I tensorflow/core/util/port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+# 2. I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+#    To enable the following instructions: AVX2 AVX_VNNI FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+#
+# Msg#1
+#   oneDNN (oneAPI Deep Neural Network Library) 是一個由 Intel 開發的高性能深度學習基礎庫。
+#   這個訊息表示您的 TensorFlow 安裝正在使用 oneDNN 進行優化，以便在您的 CPU 上更快地執行深度學習操作（例如卷積、池化等）。
+#   潛在影響：為了追求速度，oneDNN 有時會改變計算順序。由於浮點數計算的特性，不同的計算順序可能導致極小的數值差異（即浮點捨入誤差）。
+#   如果您需要確保極高的數值穩定性和結果可重現性，您可以關閉此優化。
+#   修正方法：在您的 Python 程式碼的最開始（在 import tensorflow as tf 之前）設置環境變數：
+#       import os
+#       # 關閉 oneDNN 庫的優化
+#       os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0' 
+#   結果：關閉後，計算結果會更穩定，但某些操作的執行速度可能會變慢。
+#
+# Msg#2
+#   這個訊息表示您當前使用的 TensorFlow 版本是預先編譯 (Pre-compiled) 的通用版本。
+#   它已經利用了一些可用的 CPU 指令集（例如可能是 SSE 或 AVX）進行優化，以加速性能關鍵的操作。
+#   核心提示：它偵測到您的 CPU 支援 AVX2, AVX_VNNI, FMA 等更先進的 CPU 指令集，但當前的 TensorFlow 版本在「其他操作」中並沒有完全利用這些指令集。
+#   潛在優勢：如果重新編譯 TensorFlow 並啟用這些指令集，理論上可以進一步提高某些操作的計算速度。
+#   對於大多數使用者來說，這條訊息可以被忽略。只有當您需要榨乾 CPU 的每一分性能時，才需要考慮修正。
+#   修正方法：需要從原始碼 (Source Code) 重新編譯 TensorFlow。
+
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
@@ -28,6 +52,37 @@ INPUT_SHAPE = IMAGE_SIZE + (3,) # Keras 輸入形狀 (H, W, C)
 
 WANT_REPRODUCEBILITY = False
 SEED = 42
+
+# 檢查 TensorFlow 是否能看到任何物理 GPU 裝置
+gpu_devices = tf.config.list_physical_devices('GPU')
+
+if gpu_devices:
+    print(f"✅ TensorFlow 偵測到 {len(gpu_devices)} 個 GPU 裝置。")
+    for i, gpu in enumerate(gpu_devices):
+        print(f"   - GPU {i}: {gpu.name}")
+else:
+    print("❌ TensorFlow 未偵測到 GPU。")
+
+# 若要確認每個operation被放置在哪個裝置上，請啟用以下設定: (debug-level 的 log 非常多!!)
+#    # 將 '2' 設置為 'DEBUG' 級別，啟用所有裝置放置日誌
+#    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2' 
+#
+#    # 讓 TensorFlow 打印出操作被放置在哪個裝置上
+#    tf.debugging.set_log_device_placement(True)
+#
+# 若要手動指定模型或操作使用特定 GPU，請參考以下範例：
+# 1. 使用 tf.device 明確分配到第一個 GPU
+#    with tf.device('/GPU:0'):
+#        model = create_your_model() # 模型定義
+#        model.compile(...)
+#
+# 2. 如果使用 tf.distribute.Strategy (推薦用於多 GPU)
+#    strategy = tf.distribute.MirroredStrategy()
+#    with strategy.scope():
+#        model = create_your_model()
+#        model.compile(...)
+#        
+#    # model.fit(...)
 
 # 設置可重現性
 def set_seed(seed_value=42):
