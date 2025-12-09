@@ -53,6 +53,8 @@ INPUT_SHAPE = IMAGE_SIZE + (3,) # Keras 輸入形狀 (H, W, C)
 WANT_REPRODUCEBILITY = False
 SEED = 42
 
+START_MONITORING_EPOCH = 150 # 決定 ModelCheckpoint 與 EarlyStopping 從第 150 個 Epoch 才開始監控
+
 # 檢查 TensorFlow 是否能看到任何物理 GPU 裝置
 gpu_devices = tf.config.list_physical_devices('GPU')
 
@@ -321,6 +323,7 @@ def train_model(train_loader, val_loader, total_epochs):
             monitor='val_accuracy',
             mode='max',
             save_best_only=True,
+            start_from_epoch=START_MONITORING_EPOCH, # <--- 從第 N 個 Epoch 才開始儲存/監控
             verbose=1
         ),
         # 增加 EarlyStopping 來防止過度擬合 (PyTorch 程式中沒有，但實用)
@@ -328,6 +331,7 @@ def train_model(train_loader, val_loader, total_epochs):
             monitor='val_loss', 
             patience=20, # 容忍 20 個 epoch 內 loss 不下降
             mode='min',
+            start_from_epoch=START_MONITORING_EPOCH, # <--- 從第 N 個 Epoch 才開始檢查停止條件
             verbose=1
         )
     ]
