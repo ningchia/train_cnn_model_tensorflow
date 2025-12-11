@@ -53,6 +53,7 @@ INPUT_SHAPE = IMAGE_SIZE + (3,) # Keras 輸入形狀 (H, W, C)
 WANT_REPRODUCEBILITY = False
 SEED = 42
 
+PATIENCE_VALUE = 40 # EarlyStopping 容忍度增加，以避免早期震盪。
 START_MONITORING_EPOCH = 150 # 決定 ModelCheckpoint 與 EarlyStopping 從第 150 個 Epoch 才開始監控
 
 # 檢查 TensorFlow 是否能看到任何物理 GPU 裝置
@@ -141,21 +142,33 @@ def get_loaders(data_dir, batch_size, image_size):
     
     # 創建一個 Lambda 層來執行 PyTorch 樣式的標準化 (ImageNet mean/std)
     def normalize_tf_style(image_array):
-        # 將 [0, 255] 圖像轉換為 [0, 1]
-        image_array = image_array / 255.0
-        # 執行 PyTorch 樣式的標準化
+        """
+        專門負責 Mean/Std 標準化，輸入 image_array 應為 [0, 1] 範圍。
+        """
+        # 執行標準化：(X - Mean) / Std        # 執行 PyTorch 樣式的標準化
         normed_array = (image_array - MEAN) / STD
         return normed_array
 
     # 訓練集專用 Generator (包含數據擴增)
     train_datagen = ImageDataGenerator(
-        preprocessing_function=normalize_tf_style, # 應用標準化
-        horizontal_flip=True, # 隨機水平翻轉 (對應 RandomHorizontalFlip)
+        rescale=1./255, # 轉換到 [0, 1] 範圍
         # 其他擴增參數可在此添加
+        # 若不先做rescale, 大多數幾何擴增不受影響，但某些顏色擴增（例如 brightness_range 或 channel_shift_range）
+        # 在 [0, 255] 範圍內運行時，其行為可能與 [0, 1] 範圍下的 PyTorch 擴增行為略有不同，可能導致數值結果不匹配。
+        rotation_range=15, # 隨機旋轉 15 度
+        width_shift_range=0.1, # 隨機水平平移 10%
+        height_shift_range=0.1, # 隨機垂直平移 10%
+        brightness_range=[0.7, 1.3], # 亮度變化 (1 +/- 0.3)
+        horizontal_flip=True, # 隨機水平翻轉 (對應 RandomHorizontalFlip)
+        channel_shift_range=30, # 通道偏移 (模擬色相/飽和度變化)
+        # preprocessing_function 在所有其他處理之後執行
+        preprocessing_function=normalize_tf_style # 標準化 
+
     )
 
     # 驗證集專用 Generator (只做標準化，不擴增)
     val_datagen = ImageDataGenerator(
+        rescale=1./255, # 轉換到 [0, 1] 範圍
         preprocessing_function=normalize_tf_style
     )
     # 若不想在tf_1_1_augment_nothing_data.py 裡用 torchvision.transforms來做影像前處理的話，
@@ -330,7 +343,7 @@ def train_model(train_loader, val_loader, total_epochs):
         # 增加 EarlyStopping 來防止過度擬合 (PyTorch 程式中沒有，但實用), 一樣 150 Epoch 後啟動.
         EarlyStopping(
             monitor='val_loss', 
-            patience=20, # 容忍 20 個 epoch 內 loss 不下降
+            patience=PATIENCE_VALUE, # 增加容忍度到 40，確保模型有足夠時間度過震盪期
             mode='min',
             start_from_epoch=START_MONITORING_EPOCH, # <--- 從第 N 個 Epoch 才開始檢查停止條件 (Keras 3.0/TF 2.16+才支援)
             verbose=1
