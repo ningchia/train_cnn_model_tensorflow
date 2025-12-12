@@ -9,11 +9,10 @@ import numpy as np
 # 函式必須產出代表真實數據分佈的輸入張量。
 # 在您的實際應用中，請將此處的隨機數據替換為您的訓練或驗證數據集。
 # 輸入形狀必須與您模型的輸入形狀完全匹配（例如：(1, 224, 224, 3)）。
+'''
 def representative_dataset_gen():
-    """
-    提供用於 INT8 量化校準的數據集生成器。
-    這裡使用虛擬數據作為範例。
-    """
+    # 提供用於 INT8 量化校準的數據集生成器。
+    # 這裡使用虛擬數據作為範例。
     # 假設您的模型輸入形狀是 (224, 224, 3)
     INPUT_SHAPE = (1, 224, 224, 3) 
     # 只需要提供少量批次 (~100 批次)
@@ -21,6 +20,50 @@ def representative_dataset_gen():
         # 產出一個批次 (這裡使用 Batch Size = 1)
         # 數據必須是浮點數 (tf.float32) 且已標準化 (例如 [0, 1] 或 Mean/Std)
         yield [np.random.rand(*INPUT_SHAPE).astype(np.float32)]
+'''
+# 改成用驗證數據集作為校準資料
+DATA_DIR = "data_split_keras"
+CALIBRATION_SAMPLES = 70
+
+# PyTorch 版本的標準化參數 (ImageNet Standard)
+MEAN = [0.485, 0.456, 0.406]
+STD = [0.229, 0.224, 0.225]
+
+data_dir = DATA_DIR
+
+# 取自 tf_2_train_cnn.py. 創建一個 Lambda 層來執行 PyTorch 樣式的標準化 (ImageNet mean/std)
+def normalize_tf_style(image_array):
+    """
+    專門負責 Mean/Std 標準化，輸入 image_array 應為 [0, 1] 範圍。
+    """
+    # 執行標準化：(X - Mean) / Std        # 執行 PyTorch 樣式的標準化
+    normed_array = (image_array - MEAN) / STD
+    return normed_array
+
+# 使用驗證數據集作為校準資料
+def representative_dataset_gen():
+    # 1. 建立與推論/訓練時完全相同的預處理生成器
+    # 注意：這裡必須包含與訓練時相同的 rescale 和 preprocessing_function
+    datagen = tf.keras.preprocessing.image.ImageDataGenerator(
+        rescale=1./255,
+        preprocessing_function=normalize_tf_style # 您的標準化函式
+    )
+
+    # 2. 從驗證集目錄讀取資料
+    # 建議從每個類別中挑選一些，總量約 100-200 張即可
+    calibration_generator = datagen.flow_from_directory(
+        os.path.join(data_dir, 'validate'),         # 指向您的驗證集目錄
+        target_size=(224, 224),
+        batch_size=1,              # 校準通常逐張處理
+        class_mode=None,           # 不需要標籤
+        shuffle=True
+    )
+
+    # 3. 產出數據給轉換器
+    # 轉換器期望的格式是：包含一個 numpy 陣列的 list
+    for i in range(CALIBRATION_SAMPLES): # 執行 70 次校準
+        img = next(calibration_generator)
+        yield [img.astype(np.float32)]
 
 # --- 2. 轉換核心函式 ---
 def convert_to_tflite(input_path: str, output_path: str, quantization_type: str):

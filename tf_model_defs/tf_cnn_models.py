@@ -64,6 +64,8 @@ def create_mobilenet_transfer_model(input_shape, num_classes, use_pretrained=Tru
         input_shape=input_shape,
         include_top=False, # 不包含頂部的全連接分類層
         weights=weights,   # 載入權重或None
+        # 在特徵提取器的輸出上自動加上 全局平均池化 (Global Average Pooling) 層，將最後的特徵圖壓縮成一個向量
+        # (即 1 x 1 x Channels)。這一步替代了 PyTorch 範例中的 AdaptiveAvgPool2d(1) 和 Flatten()。
         pooling='avg'      # 在特徵提取器末尾添加 Global Average Pooling
     )
     
@@ -73,7 +75,7 @@ def create_mobilenet_transfer_model(input_shape, num_classes, use_pretrained=Tru
         print("所有 MobileNetV2 基礎層已凍結。")
     
     # 建立新的分類器頭部
-    x = base_model.output
+    x = base_model.output       # shape(base_model.output) = (channels,), the 1d tensor after GlobalAvgPooling.
     x = layers.Dropout(0.2)(x) 
     # Global Average Pooling 已由 base_model 處理 (pooling='avg')
     outputs = layers.Dense(num_classes, activation='softmax')(x)
