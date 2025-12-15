@@ -142,19 +142,21 @@ def get_loaders(data_dir, batch_size, image_size):
     
     # 創建一個 Lambda 層來執行 PyTorch 樣式的標準化 (ImageNet mean/std)
     def normalize_tf_style(image_array):
-        """
-        專門負責 Mean/Std 標準化，輸入 image_array 應為 [0, 1] 範圍。
-        """
+        # 專門負責 Mean/Std 標準化，輸入 image_array 應為 [0, 1] 範圍。
+        image_array = image_array / 255.0
         # 執行標準化：(X - Mean) / Std        # 執行 PyTorch 樣式的標準化
         normed_array = (image_array - MEAN) / STD
         return normed_array
 
     # 訓練集專用 Generator (包含數據擴增)
     train_datagen = ImageDataGenerator(
-        rescale=1./255, # 轉換到 [0, 1] 範圍
         # 其他擴增參數可在此添加
-        # 若不先做rescale, 大多數幾何擴增不受影響，但某些顏色擴增（例如 brightness_range 或 channel_shift_range）
-        # 在 [0, 255] 範圍內運行時，其行為可能與 [0, 1] 範圍下的 PyTorch 擴增行為略有不同，可能導致數值結果不匹配。
+        # Pytorch 
+        #   若不先做rescale, 大多數幾何擴增不受影響，但某些顏色擴增（例如 brightness_range 或 channel_shift_range）
+        #   在 [0, 255] 範圍內運行時，其行為可能與 [0, 1] 範圍下的 PyTorch 擴增行為略有不同，可能導致數值結果不匹配。
+        # Tensorflow/Keras
+        #   但是, Tensorflow/Keras的這些擴增行為都是直接在[0-255]的像素範圍作用的, 與 PyTorch 在 [0, 1] 範圍內的行為本質上就不同.
+        #   因此, rescale=1./255 可以合併到 normalization 裡, 以確保數值一致性.
         rotation_range=15, # 隨機旋轉 15 度
         width_shift_range=0.1, # 隨機水平平移 10%
         height_shift_range=0.1, # 隨機垂直平移 10%
@@ -168,7 +170,6 @@ def get_loaders(data_dir, batch_size, image_size):
 
     # 驗證集專用 Generator (只做標準化，不擴增)
     val_datagen = ImageDataGenerator(
-        rescale=1./255, # 轉換到 [0, 1] 範圍
         preprocessing_function=normalize_tf_style
     )
     # 若不想在tf_1_1_augment_nothing_data.py 裡用 torchvision.transforms來做影像前處理的話，
