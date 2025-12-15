@@ -7,7 +7,7 @@ import numpy as np
 import math
 
 # 導入您定義的模型結構
-from tf_cnn_models import create_mobilenet_transfer_model #
+from tf_model_defs import create_mobilenet_transfer_model #
 
 # --- 1. 配置與參數設定 (與 PyTorch 版本保持一致) ---
 # 設置 GPU 記憶體增長，防止一次性佔滿所有 VRAM
