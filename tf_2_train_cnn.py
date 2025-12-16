@@ -29,6 +29,9 @@ from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
 # 從新的模組導入模型結構
 from tf_model_defs import create_clean_cnn_model, create_mobilenet_transfer_model
 
+import math # <--- 確保 math 也有導入 (之前討論的修正)
+import json # <--- 新增：用於保存類別字典
+
 import os
 import time
 import numpy as np
@@ -120,6 +123,18 @@ def set_seed(seed_value=42):
 
 if WANT_REPRODUCEBILITY:
     set_seed(SEED)
+
+# --- 輔助函式：保存類別索引 ---
+def save_class_names(class_indices, path, filename="class_indices.json"):
+    """
+    將 class_indices 字典 (例如 {'cup': 0, 'hand': 1}) 保存到 JSON 檔案。
+    """
+    output_path = os.path.join(path, filename)
+    os.makedirs(path, exist_ok=True) # 確保目錄存在
+    with open(output_path, 'w', encoding='utf-8') as f:
+        # 使用 ensure_ascii=False 確保中文或特殊字元正確保存
+        json.dump(class_indices, f, ensure_ascii=False, indent=4) 
+    print(f"✅ 類別索引已保存到: {output_path}")
 
 # --- 2. 數據加載：Keras ImageDataGenerator & flow_from_directory ---
 # 這是 TensorFlow/Keras 處理影像分類數據的標準方式，它會自動處理資料夾到類別的映射。
@@ -241,6 +256,9 @@ def get_loaders(data_dir, batch_size, image_size):
     print(f"總驗證樣本數: {val_loader.samples}")
     print(f"偵測到類別數量: {num_classes}")
     
+    # 新增：保存類別索引到文件
+    save_class_names(train_loader.class_indices, MODEL_SAVE_PATH)
+
     # Keras loader 的輸出是 (images, one-hot_labels)，
     # PyTorch loader 的輸出是 (images, class_indices)，這裡需要適應
     return train_loader, val_loader, num_classes

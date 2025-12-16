@@ -5,6 +5,7 @@ from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping   # remove
 import os
 import numpy as np
 import math
+import json
 
 # 導入您定義的模型結構
 from tf_model_defs import create_mobilenet_transfer_model #
@@ -36,8 +37,20 @@ FINE_TUNE_EPOCH = 100           # 開始微調的 Epoch 數
 
 USE_PRETRAINED = True           # 是否使用預訓練權重
 
-PATIENCE_VALUE = 40 # EarlyStopping 容忍度增加，以避免早期震盪。
-START_MONITORING_EPOCH = 20 # 從第 20 個 Epoch 開始監控 EarlyStopping
+PATIENCE_VALUE = 40             # EarlyStopping 容忍度增加，以避免早期震盪。
+START_MONITORING_EPOCH = 100    # 從第 100 個 Epoch 開始監控 EarlyStopping
+
+# --- 輔助函式：保存類別索引 ---
+def save_class_names(class_indices, path, filename="class_indices_mobilenet.json"):
+    """
+    將 class_indices 字典 (例如 {'cup': 0, 'hand': 1}) 保存到 JSON 檔案。
+    """
+    output_path = os.path.join(path, filename)
+    os.makedirs(path, exist_ok=True) # 確保目錄存在
+    with open(output_path, 'w', encoding='utf-8') as f:
+        # 使用 ensure_ascii=False 確保中文或特殊字元正確保存
+        json.dump(class_indices, f, ensure_ascii=False, indent=4) 
+    print(f"✅ 類別索引已保存到: {output_path}")
 
 # --- 2. 數據加載與預處理 ---
 
@@ -81,10 +94,13 @@ val_loader = val_datagen.flow_from_directory(
     shuffle=False # 驗證集不需打亂
 )
 
-NUM_CLASSES = train_loader.num_classes
+num_classes = train_loader.num_classes
 print(f"總訓練樣本數: {train_loader.samples}")
 print(f"總驗證樣本數: {val_loader.samples}")
-print(f"偵測到類別數量: {NUM_CLASSES}")
+print(f"偵測到類別數量: {num_classes}")
+
+# 新增：保存類別索引到文件
+save_class_names(train_loader.class_indices, MODEL_SAVE_PATH)
 
 
 # --- 3. 模型載入與編譯 ---
@@ -92,7 +108,7 @@ print(f"偵測到類別數量: {NUM_CLASSES}")
 # 載入 MobileNetV2 遷移學習模型
 model = create_mobilenet_transfer_model(
     input_shape=INPUT_SHAPE, 
-    num_classes=NUM_CLASSES, 
+    num_classes=len(train_loader.class_indices), 
     use_pretrained=USE_PRETRAINED
 )
 
@@ -127,8 +143,8 @@ checkpoint_callback = ModelCheckpoint(
 # 早停 (Early Stopping)：防止過度擬合
 early_stopping_callback = EarlyStopping(
     monitor='val_loss',
-    patience=PATIENCE_VALUE, # 增加容忍度到 40，確保模型有足夠時間度過震盪期
-    restore_best_weights=True, # 訓練結束時載入最佳權重
+    patience=PATIENCE_VALUE,    # 增加容忍度到 40，確保模型有足夠時間度過震盪期
+    restore_best_weights=True,  # 訓練結束時載入最佳權重
     start_from_epoch=START_MONITORING_EPOCH, # <--- 從第 N 個 Epoch 才開始檢查停止條件 (Keras 3.0/TF 2.16+才支援)
 )
 

@@ -1,8 +1,31 @@
+# 當這個錯誤訊息 (TypeError: unhashable type: 'list') 發生在 import tensorflow as tf 時,
+# 幾乎可以確定是典型的 Python 環境或版本不匹配問題, 主要發生在 python 3.9 或更早版本.
+# TensorFlow 2.10 及更新版本需要 Python 3.10 或更新版本. 
+# 但截至 December 2025 為止, TensorFlow release (2.20.0) 支援僅到 Python 3.13. 
+# ref : https://github.com/tensorflow/tensorflow/issues/103407
+#
+# 若不是發生在 import tensorflow as tf 時, 則可能是其他原因.
+# ref: https://stackoverflow.com/questions/28016099/how-do-i-fix-typeerror-unhashable-type-list-error
+#      https://stackoverflow.com/questions/13464152/typeerror-unhashable-type-list-when-using-built-in-set-function
+#
+# 比如說, 把 list 當作 dict 的 key 等等. List 是可變的, 而可變的變數是 unhashable.
+# 解決方法就可能是 把 list 改成 tuple, 或是改變程式邏輯.
+# 比如說: 
+#   my_dict = {[1, 2, 3]: 'value'}          # TypeError: unhashable type: 'list'
+#   my_dict = {tuple([1, 2, 3]): 'value'}   # OK.
+# 同樣的, set 也是 unmutable 的, 其元素必須也是unmutable的, 所以list不能作為set的元素.
+#   my_set = set()
+#   my_set.add([1, 2, 3])                   # TypeError: unhashable type: 'list'
+#   my_set.add(tuple([1, 2, 3]))            # OK.
+# 或是
+#   list_of_lists = [[1, 2], [2, 3], [1, 2]]
+#   unique_tuples = set(map(tuple, list_of_lists))  # unique_tuples = a set of tuples: {(1, 2), (2, 3)}
 import tensorflow as tf
 import numpy as np
 import cv2
 import os
-from typing import Literal
+from typing import List, Literal
+import json # <--- 新增：用於讀取類別索引檔案
 
 # --- 1. 配置與參數設定 (與 PyTorch 腳本保持一致) ---
 # 檢查 GPU 是否可用 (TensorFlow 自動管理裝置，但可以檢查狀態)
@@ -12,8 +35,9 @@ else:
     print("TensorFlow 使用 CPU 裝置。")
 
 MODEL_SAVE_PATH = "trained_model_tf" # Keras 模型儲存路徑
-NUM_CLASSES = 3  
-CLASS_NAMES = ["nothing", "hand", "cup"] # 必須與模型訓練時的索引順序一致 (0, 1, 2)
+# NUM_CLASSES 與 CLASS_NAMES 改透過 load_class_names_from_json 從檔案讀入.
+# NUM_CLASSES = 3  
+# CLASS_NAMES = ["nothing", "hand", "cup"] # 必須與模型訓練時的索引順序一致 (0, 1, 2)
 TARGET_SIZE = (224, 224) # MobileNetV2 標準輸入尺寸
 
 # 選擇要測試的模型 (假設訓練時使用 .keras 格式儲存)
@@ -24,6 +48,8 @@ if MODEL_TO_TEST in ['clean_cnn', 'mobilenet_v2']:
     # 假設訓練腳本儲存為最新的 .keras 格式
     CHECKPOINT_FILE = "latest_checkpoint.keras" 
 # 預訓練模型不需要檢查點檔案
+
+CLASS_INDICES_FILE = "class_indices.json" # <--- 類別索引檔案名稱
 
 CHECKPOINT_PATH = os.path.join(MODEL_SAVE_PATH, CHECKPOINT_FILE)
 
@@ -43,7 +69,7 @@ IMAGENET_MEAN = tf.constant([0.485, 0.456, 0.406], dtype=tf.float32)
 IMAGENET_STD = tf.constant([0.229, 0.224, 0.225], dtype=tf.float32)
 
 # 在 torch 裡我們用 torchvision.transforms 來做預處理 (resize -> to_tensor -> normalize).
-# 在 TensorFlow/Keras 裡, training時我們使用 我們手動實現相同的預處理步驟.
+# 在 TensorFlow/Keras 裡, 我們手動實現相同的預處理步驟.
 def normalize_image_net_tf(image_array: np.ndarray):
     """
     將 OpenCV/NumPy 陣列 (BGR, [0, 255]) 轉換為標準化 TensorFlow Tensor。
@@ -106,12 +132,42 @@ def load_trained_model_tf(path, num_classes):
         # 在載入失敗時，嘗試用結構重建模型（如果模型名稱已知，但我們這裡假設結構已包含）
         raise e
 
-# --- 5. 主推論函式 ---
+# --- 5. 輔助函式：載入並排序類別名稱 ---
+def load_class_names_from_json(model_save_path: str, filename: str = CLASS_INDICES_FILE) -> List[str]:
+    """
+    從 JSON 檔案中載入 class_indices 字典，並將其轉換為有序的類別名稱列表 (List)。
+    回傳的列表長度即為類別數量。
+    """
+    json_path = os.path.join(model_save_path, filename)
+    if not os.path.exists(json_path):
+        raise FileNotFoundError(f"❌ 找不到類別索引檔案: {json_path}. 請檢查訓練腳本是否已運行。")
+        
+    try:
+        with open(json_path, 'r', encoding='utf-8') as f:
+            class_indices = json.load(f)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"❌ JSON 檔案格式錯誤: {json_path}, 錯誤: {e}")
+
+    # 根據索引值重新排序類別名稱，以確保順序一致
+    num_class_detected = len(class_indices)
+    class_names = [''] * num_class_detected 
+    
+    for name, index in class_indices.items():
+        if isinstance(index, int) and 0 <= index < num_class_detected:
+            class_names[index] = name
+        else:
+            raise ValueError(f"類別索引 {name}: {index} 無效或超出範圍。")
+
+    print(f"✅ 成功載入類別順序: {class_names} (共 {num_class_detected} 個)")
+    return class_names
+
+# --- 6. 主推論函式 ---
 def main():
     try:
+        custom_classes = load_class_names_from_json(MODEL_SAVE_PATH) # <--- 動態載入類別列表
         # 載入模型
-        model = load_trained_model_tf(CHECKPOINT_PATH, NUM_CLASSES)
-        
+        model = load_trained_model_tf(CHECKPOINT_PATH, len(custom_classes))
+
         # 啟動 WebCam
         cap = cv2.VideoCapture(0)
         if not cap.isOpened():
@@ -157,7 +213,7 @@ def main():
                 # 訓練/微調後的模型 (3 類別輸出)
                 predicted_index_final = predicted_index_raw
                 
-            predicted_class = CLASS_NAMES[predicted_index_final]
+            predicted_class = custom_classes[predicted_index_final]
             confidence_percent = confidence * 100
 
             # --- 顯示結果 (使用 OpenCV) ---
