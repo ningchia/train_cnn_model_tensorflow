@@ -1,0 +1,29 @@
+services:
+  tf-dev:
+    build: .
+    container_name: tf_blackwell_dev
+    image: tf-custom-rtx5070:latest
+    runtime: nvidia
+    environment:
+      - DISPLAY=${DISPLAY}
+      - NVIDIA_VISIBLE_DEVICES=all
+      - TF_FORCE_GPU_ALLOW_GROWTH=true
+    volumes:
+      - .:/workspace
+      - /tmp/.X11-unix:/tmp/.X11-unix
+    # 資源限制與 GPU 配置
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    # 設備掛載：相機存取
+    devices:
+      - /dev/video0:/dev/video0
+    # 共享記憶體設定 (預防大型 Batch 崩潰)
+    shm_size: '8gb'
+    # 保持容器開啟
+    stdin_open: true
+    tty: true

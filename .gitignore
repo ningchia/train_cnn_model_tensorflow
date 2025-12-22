@@ -5,3 +5,5 @@
 !*.py
 !*/
 !.gitignore
+!docker-compose.yml
+!Dockerfile
