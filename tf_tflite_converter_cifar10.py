@@ -11,20 +11,35 @@ IMAGENET_STD = np.array([0.229, 0.224, 0.225])
 def representative_dataset_gen():
     """
     為 INT8 量化提供真實的 CIFAR-10 數據校準。
-    必須確保預處理邏輯與訓練腳本完全相同。
+    優化後的校準數據生成器：
+    1. 使用隨機抽樣確保類別覆蓋。
+    2. 嚴格執行與『推論』一致的固定預處理。
+    不要進行隨機擴增, 量化校準數據應該儘可能貼近"推論"時的數據形態
     """
-    print("正在加載 CIFAR-10 數據進行 INT8 校準...")
     (x_train, _), (_, _) = tf.keras.datasets.cifar10.load_data()
     
-    # 抽取 100 張代表性圖片即可
-    num_calibration_steps = 100
-    for i in range(num_calibration_steps):
+    # numpy.random.choice(a, size=None, replace=True, p=None)
+    #   a：抽樣對象。可以是一個一維陣列（如 [10, 20, 30]）。也可以是一個整數，表示從 0 到 a-1 的整數範圍內抽樣。
+    #   size：要抽取的樣本數量or輸出的形狀。預設為 None（只抽一個）。可以是一個數字（如 100），也可以是元組（如 (3, 4)）。
+    #   replace：是否允許重複抽樣。
+    #   p：每個元素被選中的機率分佈。預設是均勻分佈（每個機率都一樣）。如果要自定義，陣列長度必須與 a 相同，且總和必須為 1.
+
+    # 隨機產生 100 個索引，確保多樣性
+    num_samples = 100
+    # 從 0 到 len(x_train)-1 中隨機選擇 num_samples 個索引, 不重複
+    indices = np.random.choice(len(x_train), num_samples, replace=False)
+    
+    for i in indices:
         img = x_train[i]
         
-        # 預處理流程
-        img = tf.cast(img, tf.float32) / 255.0
-        img = tf.image.resize(img, IMAGE_SIZE)
+        # --- 固定預處理流程 (必須與推論腳本 tf_8_test 保持 100% 一致) ---
+        # 1. 轉 float32 並縮放 [0, 1]
+        img = img.astype(np.float32) / 255.0
+        # 2. Resize
+        img = tf.image.resize(img, IMAGE_SIZE).numpy()
+        # 3. ImageNet 標準化
         img = (img - IMAGENET_MEAN) / IMAGENET_STD
+        # ---------------------------------------------------------
         
         # 增加 Batch 維度 (1, 224, 224, 3)
         img = np.expand_dims(img, axis=0).astype(np.float32)
