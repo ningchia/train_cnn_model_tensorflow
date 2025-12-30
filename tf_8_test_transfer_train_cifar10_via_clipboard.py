@@ -14,6 +14,14 @@ CHECKPOINT_FILE = "latest_checkpoint_cifar10_mobilenet.keras"
 CLASS_INDICES_FILE = "class_indices_cifar10.json"
 CHECKPOINT_PATH = os.path.join(MODEL_SAVE_PATH, CHECKPOINT_FILE)
 
+# 設定信心度/機率閥值 (例如 0.4，低於此值顯示 Unknown. 類別數越多這個要越低.
+# 在 "before softmax" 實施檢查的缺點：Logits 的數值範圍不固定，可能是 5.0，也可能是 50.0，這取決於模型的訓練狀態，因此門檻極難設定.
+# CONFIDENCE_THRESHOLD = 0.4  # 效果還是不好.
+
+# 改成設定機率間隙門檻 (第一名機率 - 第二名機率)
+# 例如 0.05 代表第一名必須領先第二名 5% 以上才算勝出
+MARGIN_THRESHOLD = 0.05
+
 IMAGE_SIZE = (224, 224)
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406])
 IMAGENET_STD = np.array([0.229, 0.224, 0.225])
@@ -46,14 +54,42 @@ def preprocess_image(pil_img):
 
 def run_inference(model, pil_img, class_names):
     input_data = preprocess_image(pil_img)
-    predictions = model.predict(input_data, verbose=0)  # 輸出是 (1, N) 的 NumPy 陣列
+    predictions = model.predict(input_data, verbose=0)[0]  # model.predict 輸出是 (1, N) 的 NumPy 陣列
     # 因為訓練時期的model定義最後一層是 layers.Dense(NUM_CLASSES, activation='softmax'), 代表輸出已經是softmax後的機率, 而非logits.
     # 所以這邊的predictions 已經是機率.
-    
+
+    '''
     # 取得機率最高的索引
-    idx = np.argmax(predictions[0])
-    confidence = predictions[0][idx]
-    return class_names[str(idx)], confidence * 100
+    idx = np.argmax(predictions)
+    prob = predictions[idx]
+
+    # 檢查是否達到閥值
+    if prob < CONFIDENCE_THRESHOLD:
+        return "Unknown", prob * 100
+    else:
+        return class_names[str(idx)], prob * 100
+    '''
+
+    # 排序取得前兩名
+    # np.argsort(predictions) : 將 predictions 陣列中的數值進行由小到大的排序，但它回傳的不是數值，而是原始的索引（Index）。
+    # ex. 假設 predictions 是 [0.1, 0.7, 0.2]（分別代表類別 0, 1, 2）。 np.argsort 會回傳：[0, 2, 1]。
+    # [-2:] (切片操作：取最後兩個)
+    # [::-1] (切片操作：反轉順序)
+    top_indices = np.argsort(predictions)[-2:][::-1] # 取得最高的兩個 index [最高, 次高]
+    top1_idx = top_indices[0]
+    top2_idx = top_indices[1]
+    
+    top1_prob = predictions[top1_idx]
+    top2_prob = predictions[top2_idx]
+    
+    margin = top1_prob - top2_prob
+    print(f"Top1({class_names[str(top1_idx)]}): {top1_prob:.2f}, Top2({class_names[str(top2_idx)]}): {top2_prob:.2f}, Margin: {margin:.2f}")
+
+    # 判斷邏輯：差距大於門檻才輸出類別
+    if margin < MARGIN_THRESHOLD:
+        return "Unknown", top1_prob * 100
+    else:
+        return class_names[str(top1_idx)], top1_prob * 100
 
 # --- 4. 繪製 UI ---
 def draw_ui(frame, predicted_class=None, confidence=None):
@@ -89,7 +125,8 @@ def main():
     model = tf.keras.models.load_model(CHECKPOINT_PATH)
     print("✅ 模型載入成功！")
 
-    cv2.namedWindow('CIFAR-10 TF Inference')
+    win_name = 'CIFAR-10 TF Inference'
+    cv2.namedWindow(win_name)
     
     # 用於滑鼠事件處理
     params = {'clicked_open': False}
@@ -108,6 +145,24 @@ def main():
     print("🚀 推論引擎啟動。點擊視窗按鈕、按 'O' 鍵或複製圖片到剪貼簿...")
 
     while True:
+        ''' 
+        (不work #1)
+        # 檢查視窗是否被按 X 關閉
+        if cv2.getWindowProperty(win_name, cv2.WND_PROP_AUTOSIZE) < 0:
+            break
+        '''
+        '''
+        (不work #2)
+        # --- 視窗關閉偵測：雙重檢查法 ---
+        try:
+            # 在許多系統上，一旦點擊 X，getWindowProperty 會丟出異常或回傳 -1
+            visible = cv2.getWindowProperty(win_name, cv2.WND_PROP_VISIBLE)
+            if visible < 1: 
+                break
+        except:
+            break # 捕捉到異常代表視窗已銷毀
+        '''
+
         # 1. 檢查按鈕點擊或按鍵
         key = cv2.waitKey(30) & 0xFF
         if key == ord('q'): break
@@ -143,7 +198,7 @@ def main():
             display_img = np.zeros((500, 600, 3), dtype=np.uint8)
 
         draw_ui(display_img, predicted_class, confidence)
-        cv2.imshow('CIFAR-10 TF Inference', display_img)
+        cv2.imshow(win_name, display_img)
 
     cv2.destroyAllWindows()
 
