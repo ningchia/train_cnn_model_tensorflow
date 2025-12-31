@@ -1,3 +1,4 @@
+from pyexpat import features
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers, optimizers
@@ -31,6 +32,7 @@ def preprocess_data(image, label):
     # 1.轉換為 float32 並歸一化到 [0, 1]
     #   Resize 到 MobileNetV2 期望的 224x224
     image = tf.cast(image, tf.float32) / 255.0
+    # tf.image (as a tensorflow module) API doc : https://www.tensorflow.org/api_docs/python/tf/image
     image = tf.image.resize(image, IMAGE_SIZE)
 
     # 2. 幾何擴增（翻轉不影響數值範圍，隨時可以做）
@@ -54,6 +56,16 @@ def preprocess_data(image, label):
     # 標籤轉為 One-hot (因模型使用 categorical_crossentropy)
     label = tf.one_hot(label, NUM_CLASSES)
     return image, label
+
+# TensorFlow Datasets (TFDS) 把資料集看作一個帶有「自我描述」的物件。
+# 可以使用 with_info=True 來取得所有的元數據。
+# 這裡展示如何取得 CIFAR-10 的標籤名稱列表。 (https://www.tensorflow.org/datasets/catalog/cifar10)
+#   import tensorflow_datasets as tfds
+#   ds, info = tfds.load('cifar10', with_info=True)     # 取得資料集與 info 物件
+#   print(info.features['label'].names)                 # 透過 info 取得標籤資訊
+#
+# 另外無論是torch, tensorflow/keras, 都可以使用python內建的 dir()函式來查看 dataset 物件的所有屬性和方法：
+#   print(dir(info.features['label']))
 
 # --- 3. 數據加載與類別字典儲存 ---
 def get_dataset():
@@ -82,6 +94,11 @@ def get_dataset():
     # .prefetch() 讓 CPU 在 GPU 訓練當前批次（Batch）時，就預先準備好下一個批次.
     # .shuffle(5000) 先從數據庫中取出前 5000 張圖放進一個「緩衝區（Buffer）」。
     #                從這 5,000 張圖中隨機抽出一個送去訓練。再從原始數據庫取下一張新圖補進來。重複這個動作。
+    # 可以用下面方式看看一個sample有哪些欄位
+    #   for features in train_ds.take(1):
+    #       print(features.keys()) 
+    #       print(features['image'].shape, features['label'].shape)
+    # ps. tf.data.Dataset.take(count, name=None) : Creates a Dataset with at most count elements from this dataset.
     train_ds = tf.data.Dataset.from_tensor_slices((x_train, y_train))
     train_ds = train_ds.shuffle(5000).map(preprocess_data, num_parallel_calls=tf.data.AUTOTUNE).batch(BATCH_SIZE).prefetch(tf.data.AUTOTUNE)
 
