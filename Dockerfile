@@ -18,7 +18,9 @@ RUN pip install --no-cache-dir \
     opencv-python==4.8.1.78 \
     pillow \
     matplotlib \
-    tqdm
+    tqdm \
+    datasets \
+    huggingface_hub
 
 # 設定工作目錄
 WORKDIR /workspace
