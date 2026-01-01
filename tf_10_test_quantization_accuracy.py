@@ -27,21 +27,29 @@ def preprocess_image(image_uint8):
 def run_tflite_inference(interpreter, input_data):
     input_details = interpreter.get_input_details()
     output_details = interpreter.get_output_details()
+    
+    # 取得模型要求的輸入資料類型
+    target_dtype = input_details[0]['dtype']
 
-    # 檢查是否需要手動進行 INT8 量化 (針對輸入)
-    # 因為轉換腳本設定了 inference_input_type = tf.int8
-    if input_details[0]['dtype'] == np.int8:
+    # --- 1. 處理輸入量化 ---
+    # 同時支援 np.int8 與 np.uint8
+    if target_dtype in [np.int8, np.uint8]:
         scale, zero_point = input_details[0]['quantization']
-        input_data = (input_data / scale + zero_point).astype(np.int8)
+        # 量化公式: q = (f / scale) + zero_point
+        input_data = (input_data / scale + zero_point)
+        # 根據模型要求強制轉型
+        input_data = input_data.astype(target_dtype)
 
     interpreter.set_tensor(input_details[0]['index'], input_data)
     interpreter.invoke()
     
+    # --- 2. 處理輸出反量化 ---
     output_data = interpreter.get_tensor(output_details[0]['index'])
+    output_dtype = output_details[0]['dtype']
     
-    # 如果輸出是 int8，需反量化回 float 以進行 argmax 比較
-    if output_details[0]['dtype'] == np.int8:
+    if output_dtype in [np.int8, np.uint8]:
         scale, zero_point = output_details[0]['quantization']
+        # 反量化公式: f = (q - zero_point) * scale
         output_data = (output_data.astype(np.float32) - zero_point) * scale
         
     return output_data
