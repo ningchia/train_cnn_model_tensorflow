@@ -27,6 +27,8 @@ import os
 from typing import List, Literal
 import json # <--- 新增：用於讀取類別索引檔案
 
+RUN_IN_WSL = False  # 如果在 WSL 環境下運行，請設置為 True
+
 # --- 1. 配置與參數設定 (與 PyTorch 腳本保持一致) ---
 # 檢查 GPU 是否可用 (TensorFlow 自動管理裝置，但可以檢查狀態)
 if tf.config.list_physical_devices('GPU'):
@@ -173,6 +175,10 @@ def main():
         if not cap.isOpened():
             raise IOError("無法打開 WebCam。請檢查相機連接或驅動程式。")
 
+        # 關鍵設定 for WSL：將格式設為 MJPG (降低頻寬需求，增加相容性)
+        if RUN_IN_WSL:
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+            
         print("\n--- 即時推論已啟動 ---")
         print("按下 'q' 鍵退出。")
 

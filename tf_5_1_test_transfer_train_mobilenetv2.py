@@ -7,6 +7,8 @@ from tensorflow.keras.models import load_model
 from typing import List
 import json
 
+RUN_IN_WSL = False  # 如果在 WSL 環境下運行，請設置為 True
+
 # --- 1. 配置與參數設定 (與訓練腳本保持一致) ---
 MODEL_SAVE_PATH = "trained_model_tf"
 CHECKPOINT_FILE = "latest_checkpoint_mobilenet.keras"   # 檢查點檔案名稱
@@ -108,6 +110,10 @@ def main():
         if not cap.isOpened():
             raise IOError("無法打開 WebCam。請檢查相機連接或驅動程式。")
 
+        # 關鍵設定 for WSL：將格式設為 MJPG (降低頻寬需求，增加相容性)
+        if RUN_IN_WSL:
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+            
         print("\n--- Keras 即時遷移學習模型推論已啟動 ---")
         print("按下 'q' 鍵退出。")
 
